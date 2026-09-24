@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.*
+
+# Supabase CLI local state
+supabase/.branches/
+supabase/.temp/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
