@@ -23,7 +23,7 @@ Telegram → n8n workflow → OpenRouter → Telegram
 
 1. **Telegram Message** trigger (restricted to an allowlisted chat ID)
 2. **Character Card** — name, system prompt, model, temperature, penalties, context window size
-3. **Route Command** — `/reset` or `/start` archives the conversation (fresh recent window, still searchable by recall); `/forget` permanently deletes this chat's history with the character; any other text is a chat turn
+3. **Route Command** — `/clear`, `/new` or `/start` archive the conversation (fresh recent window, still searchable by recall); `/reset` permanently deletes this chat's history with the character; any other text is a chat turn
 4. **Chat turn** — typing indicator → embed the message → fetch last N messages + top-K similar older exchanges → build prompt → OpenRouter → reply, then embed the exchange and save both turns
 5. OpenRouter and Postgres errors are sent back to the chat as `[error: …]`; nothing is saved if OpenRouter fails
 6. If Ollama is unreachable, recall is skipped and turns are saved without embeddings; run the **Lars memory backfill** workflow afterwards to fill them in
@@ -44,7 +44,7 @@ Memory tuning lives in the Character Card: `context_window_limit` (recent messag
 messages (id, chat_id, character, role, content, embedding vector(768), archived_at, created_at)
 ```
 
-`embedding` is set only on assistant rows and embeds the whole exchange (preceding user message + reply). `archived_at` is set by `/reset`: archived rows leave the recent window but remain recallable.
+`embedding` is set only on assistant rows and embeds the whole exchange (preceding user message + reply). `archived_at` is set by `/clear` / `/new`: archived rows leave the recent window but remain recallable.
 
 Add schema changes as new timestamped files in `supabase/migrations/`; never edit an applied migration.
 
@@ -53,5 +53,5 @@ Add schema changes as new timestamped files in `supabase/migrations/`; never edi
 - [x] Telegram → OpenRouter → Telegram
 - [x] Postgres sliding-window memory
 - [x] Character card (Set node in the workflow)
-- [x] `/reset` (archive) and `/forget` (delete)
+- [x] `/clear` / `/new` (archive) and `/reset` (delete)
 - [x] Semantic recall with pgvector + `nomic-embed-text`
