@@ -19,7 +19,7 @@ Note: Cydonia's chat template (Mistral `[INST]`) doesn't put the system prompt a
 
 - [x] Add Character Card fields (`rules`, `character`, `persona_name`, `persona`, `world`, `scenario`); **Build Messages** assembles them with headings and skips empty blocks (Lars RP Bot with Scenarios, 2026-09-26)
 - [x] ~~Move recall out of the system message~~: not needed and not possible, see note above
-- [ ] Later: author's note / state. There's no mid-history `system` message, so fold it into the system prompt (already at depth 0), or into the latest user message
+- [ ] Later: author's note (state is done, see Later). There's no mid-history `system` message, so fold it into the system prompt (already at depth 0), or into the latest user message
 
 ## 2. Fix the prompt itself
 
@@ -45,7 +45,8 @@ Note: Cydonia's chat template (Mistral `[INST]`) doesn't put the system prompt a
 
 ## Later
 
-- [ ] Rolling state/summary: every N turns, after **Save Turn**, a second LLM call rewrites a per-session summary (events so far, open threads, mood); inject it at depth. Covers the arc between the 20-message window and vector recall
+- [x] Rolling state/summary: `session_state` table; every `summary_interval_turns` (default 5) turns after **Save Turn**, oMLX merges the new messages (minus the latest, still-swipeable exchange) into the summary; injected as "Story so far" in the system prompt. `/clear` and `/reset` delete it (2026-09-26)
+- [ ] Tune the summary once it has run a few times: interval, 300-word cap, the four labels; consider moving state into the session model when `session_id` lands
 - [ ] LLM-generated scenarios: a separate workflow generates scenario + opener ideas into the openers table
 - [ ] `/scenario <text>` / `/note <text>` commands to set context from Telegram
 - [ ] Lorebook (`context_entries` with keyword or vector triggers, reusing the **Embed Query** vector). Skip until a character actually has lore
