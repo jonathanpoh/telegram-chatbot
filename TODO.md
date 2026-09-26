@@ -27,21 +27,28 @@ Note: Cydonia's chat template (Mistral `[INST]`) doesn't put the system prompt a
 - [x] Remove confidant/therapist leftovers: "explains in plain language", "gently clarifies misunderstandings", "at most one question", "Thanks for sharing" opener ban
 - [x] Replace the adjective pile ("authentic, vivid, varied…") with concrete rules: POV/tense, `*actions*` + "dialogue" formatting (Format Reply already renders `*…*` as italics)
 - [x] Hard rule: never write Jonathan's dialogue, actions, thoughts or reactions; describe only what he perceives
-- [ ] Flesh out Lars: appearance, speech quirks, what makes him "unorthodox", what he wants from the research
-- [ ] Replace "Jonathan is a cis male. Respond appropriately" with a persona block (name, he/him, what Lars knows about him)
+- [x] Flesh out Lars: appearance, speech quirks, what makes him "unorthodox", what he wants from the research
+- [x] Replace "Jonathan is a cis male. Respond appropriately" with a persona block (name, he/him, what Lars knows about him)
 - [x] Safe word: define Lars's behaviour on "orange" (stop immediately, end session, check in), not just its existence
 - [x] Add OOC convention: `((OOC: …))` = step out of character and answer directly
 - [x] Drop "never the same thing twice in a row" from the prompt; enforce it in the scenario picker instead
-- [ ] Don't paste the LLM wrapper lines ("Here is a sanitized version…") into the card
 
 ## 3. Sessions, recall and openers
 
-- [ ] Add a `session_id` to `messages`; `/new` (and `/clear`, `/start`) starts a new session
-- [ ] Decide the cross-session recall policy: bleed across sessions (relationship continuity), restrict to the current session, or recall across sessions but label memories "from a previous session"
-- [ ] Openers table: fixed set of scenario + opener pairs; `/new` picks one at random, excluding the last N used
-- [ ] Opener vs chat template: history must start with `user` after the system message. An opener stored as the first assistant row will make oMLX error. Options: prepend a synthetic user turn (e.g. `[Session start]`) when the window starts with `assistant`, or put the opener text in the scenario block instead
-- [ ] Store the opener as the first assistant row of the session with `embedding = NULL` (or a marker). Otherwise recall pairs it with the previous session's last user message
-- [ ] Record which scenario each session used (needed for the "not the last N" exclusion)
+Done 2026-09-26: `sessions` + `scenarios` tables, `messages.session_id`.
+
+- [x] `/new`, `/clear`, `/start` end the current session (copying its `session_state` summary to `sessions.summary`) and start a new one; `/reset` deletes messages, sessions and state
+- [x] Cross-session recall: bleeds across sessions; memories are labelled "earlier this session" / "a previous session"
+- [x] Previous session's summary injected as `## Previous session: <title>`
+- [x] Scenario picker: random enabled scenario for the character, preferring ones not used in the last `scenario_no_repeat` sessions (default 3; add the field to the Character Card to override). No scenarios → falls back to the Card's `scenario`
+- [x] Openers: `scenarios.opener` sent verbatim if set; otherwise the LLM writes one from the scenario, previous-session summary and local time
+- [x] Opener vs chat template: Build Messages prepends a synthetic `[Session start]` user turn when the window starts with the opener
+- [x] Openers saved without an embedding; recall, /swipe and the backfill workflow pair replies with user messages only within the same session
+- [ ] Write real scenarios in the `scenarios` table (3 neutral starters seeded directly in the DB, not in the repo)
+- [x] Final recap on `/new`/`/clear`/`/start`: oMLX writes a past-tense recap (What happened / Outcomes / Carried forward / Relationship) from the rolling notes + remaining messages, stored as `sessions.summary`. Skipped for `/reset` and for sessions where the user never spoke; those are skipped by the "previous session" lookup, which falls back to the last session with notes
+- [ ] Longer-term history: only the last session's recap is injected; older sessions reach the prompt only via vector recall. If the relationship arc needs more, add a rolling "history so far" digest updated from each recap
+- [ ] Race: a message sent while the opener is still generating (~10 s) doesn't see it, so Lars greets twice. Mitigated with "setting the scene…" + typing indicator; a real fix would make the chat path wait for or skip a pending opener
+- [ ] `/swipe` can't regenerate the opener itself (it only swipes exchanges); use `/new` again for now
 
 ## Later
 
