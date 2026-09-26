@@ -56,7 +56,7 @@ CREATE INDEX ON messages USING ivfflat (embedding vector_cosine_ops);
 Stored as JSON (file or DB row). Fields:
 - `name`
 - `system_prompt`
-- `model` (OpenRouter model string, e.g. `anthropic/claude-3.5-sonnet`)
+- `model` (OpenRouter model string, e.g. `deepseek/deepseek-v4.1-flash`)
 - `temperature`
 - `context_window_limit` (max messages to include)
 
