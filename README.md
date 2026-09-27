@@ -30,6 +30,9 @@ Telegram → n8n workflow → oMLX (local LLM) → Telegram
 | `/swipe` | Regenerate the last reply (SillyTavern-style re-roll). The new exchange replaces the old one once it's saved. Before you've said anything in a session, it re-rolls the opener instead (same scenario). The old message is edited in place |
 | `/note <text>` | Set a silent author's note for this session (tone, pacing, hidden plot beats). Lars follows it every turn without acknowledging it; it's never saved as a message. `/note` alone shows it, `/note clear` removes it. A new session starts without one |
 | `/scene` | List the enabled scenarios as tappable `/scene_<id>` commands. Picking one restarts the session on it: if you haven't said anything yet, the current session and its opener are discarded; otherwise it ends with a recap as with `/new`. A scenario used in the last 3 sessions asks for confirmation (`/scene_<id>_yes`) |
+| `/premise <text>` | Start a one-off session from your own premise, e.g. to steer Lars to a specific experiment. Restarts like `/scene` (unused session discarded, otherwise ended with a recap); Lars writes the opener. Not saved to `scenarios`: the session has no `scenario_id`, and its title is the premise's first sentence. `/premise` alone shows the current premise |
+| `/newscenarios [idea]` | Ask the LLM for 3 new scenario ideas (optionally building on `idea`), aware of the existing ones and the last recap. Each is listed with a tappable `/keep_<id>` |
+| `/keep_<id>` | Save an idea from `/newscenarios` as an enabled scenario (then `/scene_<id>` to play it). Ideas you don't keep are deleted by the next `/newscenarios` |
 | `/reset` | Permanently delete all messages, sessions and summaries with this character, then start a new session |
 
 BotFather `/setcommands`:
@@ -39,21 +42,25 @@ clear - Same as /new
 swipe - Regenerate Lars's last reply
 note - Show, set or clear the author's note for this session
 scene - Pick the scenario for a new session
+premise - Start a one-off session from your own premise
+newscenarios - Brainstorm new scenarios to save
 reset - Permanently delete all history with Lars
 ```
 
 ## n8n workflow
 
-1. **Intake** — Telegram trigger (allowlisted chat ID) → **Character Card** → **Local Time** (Europe/Lisbon time of day, e.g. `13:15 (afternoon)`; no date, since the story is set in the future) → **Route Command** (session commands, `/swipe`, `/note`, `/scene`, chat)
+1. **Intake** — Telegram trigger (allowlisted chat ID) → **Character Card** → **Local Time** (Europe/Lisbon time of day, e.g. `13:15 (afternoon)`; no date, since the story is set in the future) → **Route Command** (session commands, `/swipe`, `/note`, `/scene`, `/premise`, `/newscenarios`, `/keep_<id>`, chat)
 2. **Session change** (`/new`, `/clear`, `/start`, `/reset`)
-   - **Gather Ending Session** → if the user said anything this session (and it isn't `/reset`), **Write Recap**: oMLX turns the rolling notes plus the remaining messages into a past-tense recap (*What happened / Outcomes / Carried forward / Relationship*)
+   - **Gather Ending Session** → if the user said anything this session (and it isn't `/reset`), **Write Recap**: oMLX turns the session's scenario, the rolling notes and the remaining messages into a past-tense recap (*Status / What happened / Outcomes / Carried forward / Relationship*). *Status* is **Completed**, or **Aborted** if the safe word was used (detected in SQL from the Card's `rules` over the whole session) or the messages stop partway through the scenario; an aborted recap calls the results inconclusive and the scenario open to a retry later
    - **Reset or Clear** — `/reset` deletes messages, sessions and state; otherwise ends the session (stores the recap, falling back to the rolling notes, as `sessions.summary`), archives its messages and clears `session_state`
    - **Start Session** — picks a random enabled scenario for the character, preferring ones not used in the last 3 sessions; with no scenarios, falls back to the Card's `scenario`
    - **Confirm Reset** announces the session → the scenario's fixed `opener` if it has one, otherwise **Write Opener** (oMLX, from the card, previous session's recap, scenario and local time) → **Save Opener** (stored without an embedding) → sent like a normal reply
    - **Scene** — `/scene`: **Scene Lookup** lists the enabled scenarios, or checks the picked one against the last 3 sessions → **Start Scene?** — a new pick (or a confirmed `_yes`) enters the session change path above, with **Start Session** using that scenario and **Reset or Clear** deleting the current session if the user never spoke; otherwise **Scene Reply** sends the list, the repeat confirmation or "not found"
+   - **Premise** — `/premise`: **Premise Lookup** reads the current session → **Start Premise?** — with text, enters the session change path like `/scene` (discard-if-unused included), and **Start Session** inserts a session with the hand-written premise and no `scenario_id`; bare, **Premise Reply** shows the current premise
 3. **Swipe** — find the last exchange in the current session; if there is one, re-run its user message through the chat turn with a cutoff so the old exchange is excluded from context. If the user hasn't spoken yet, **Find Opener** loads the session's scenario and **Write Opener** writes a new opener; **Save Opener** replaces the old one in the same statement
 4. **Note** — `/note`: **Set Note** shows, sets or clears `sessions.note` on the current session → **Confirm Note** replies with a fixed message (no LLM call)
-5. **Chat turn**
+5. **Scenario ideas** — `/newscenarios`: **Scenario Context** (existing non-draft scenarios + last recap) → **Write Scenarios** (oMLX, 3 ideas as `## Title` + premise paragraph in Markdown, temperature 0.9) → **Save Drafts** (the queryReplacement parses the Markdown into JSON in JS — headings, `**bold**` titles, `Title:`/`Premise:` labels and numbering are tolerated — then replaces unkept drafts with the new ones as `enabled = false, draft = true`) → **Drafts Reply**. `/keep_<id>`: **Keep Scenario** sets `draft = false, enabled = true` → **Keep Reply**
+6. **Chat turn**
    - **Turn Input** — the message to answer (new text, or the swiped one) and the swipe cutoff
    - Typing indicator → embed the message → **Fetch Recent History**: recent window, top-K similar older exchanges from any session, the rolling summary, the current scenario and author's note, and the previous session's recap
    - **Build Messages** — system prompt (see below) + history + message. If the window starts with the opener, a synthetic `[Session start]` user turn is prepended (the Mistral template requires user/assistant alternation)
@@ -61,9 +68,9 @@ reset - Permanently delete all history with Lars
    - If Telegram rejects the HTML, **Send Plain Reply** resends it fully escaped (≤ 4000 chars)
    - In parallel: embed the exchange → **Save Turn** (tagged with the current session and the sent message's Telegram ID; on `/swipe`, deletes the old exchange in the same statement). This branch runs after the sending branch (n8n v1 runs the upper branch first), which is how Save Turn sees the Telegram ID
    - Openers are saved before sending, so **Opener Sent?** → **Save Opener ID** stores their Telegram ID afterwards
-6. **Rolling state** — after each saved turn, if ≥ `summary_interval_turns` turns aren't in the summary yet (the latest exchange is excluded so `/swipe` can't leave a replaced reply in it), oMLX merges them into `session_state` (*Events so far / Current situation / Open threads / Mood*)
-7. LLM, Postgres and delivery errors are sent to the chat as `[error: …]`. Nothing is saved if the LLM call fails; a failed delivery doesn't block saving. A failed summary or recap is skipped silently.
-8. If Ollama is unreachable, recall is skipped and turns are saved without embeddings; run **Lars memory backfill** afterwards.
+7. **Rolling state** — after each saved turn, if ≥ `summary_interval_turns` turns aren't in the summary yet (the latest exchange is excluded so `/swipe` can't leave a replaced reply in it), oMLX merges them into `session_state` (*Events so far / Current situation / Open threads / Mood*)
+8. LLM, Postgres and delivery errors are sent to the chat as `[error: …]`. Nothing is saved if the LLM call fails; a failed delivery doesn't block saving. A failed summary or recap is skipped silently.
+9. If Ollama is unreachable, recall is skipped and turns are saved without embeddings; run **Lars memory backfill** afterwards.
 
 ### System prompt
 
@@ -134,13 +141,14 @@ Options for going further: move Postgres to the homelab (schema is portable, nee
 messages      (id, chat_id, character, role, content, embedding vector(768), session_id, archived_at, telegram_message_id, created_at)
 sessions      (id, chat_id, character, scenario_id, title, premise, summary, note, started_at, ended_at)
 session_state (chat_id, character, summary, through_id, updated_at)   -- one row: the current session
-scenarios     (id, character, title, premise, opener, enabled, created_at)
+scenarios     (id, character, title, premise, opener, enabled, draft, created_at)
 ```
 
 - `messages.embedding` is set only on assistant rows and embeds the whole exchange (preceding user message + reply). Openers have none. Recall, `/swipe` and the backfill pair a reply only with a user message from the **same session**.
 - `archived_at` is set when a session ends: archived rows leave the recent window but remain recallable.
 - The current session is the latest `sessions` row with `ended_at IS NULL`. `sessions.summary` holds the final recap; `premise` is a snapshot, so editing a scenario doesn't rewrite past sessions.
-- **Scenarios** are content, managed in the Supabase table editor, not in migrations. `opener` is optional (null = LLM-written); `enabled = false` takes a scenario out of rotation.
+- **Scenarios** are content, managed in the Supabase table editor, not in migrations. `opener` is optional (null = LLM-written); `enabled = false` takes a scenario out of rotation. `draft = true` rows are unkept `/newscenarios` ideas (always disabled).
+- A `/premise` session has `scenario_id` null and its own `title`/`premise`; the no-repeat picker ignores it.
 
 Add schema changes as new timestamped files in `supabase/migrations/`; never edit an applied migration.
 
@@ -161,6 +169,7 @@ Detailed working notes are in [`TODO.md`](TODO.md).
 - [x] Rolling session summary
 - [x] Sessions with random scenarios, LLM-written openers and a final recap; recall across sessions
 - [x] `/note` author's note
-- [ ] LLM-generated scenarios
+- [x] `/premise` one-off sessions
+- [x] LLM-generated scenarios (`/newscenarios`, `/keep_<id>`)
 - [ ] Self-hosted Postgres
 - [ ] End-to-end encrypted transport (Signal)

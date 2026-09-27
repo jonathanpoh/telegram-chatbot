@@ -45,7 +45,7 @@ Done 2026-09-26: `sessions` + `scenarios` tables, `messages.session_id`.
 - [x] Opener vs chat template: Build Messages prepends a synthetic `[Session start]` user turn when the window starts with the opener
 - [x] Openers saved without an embedding; recall, /swipe and the backfill workflow pair replies with user messages only within the same session
 - [x] Write real scenarios in the `scenarios` table (3 neutral starters seeded directly in the DB, not in the repo)
-- [x] Final recap on `/new`/`/clear`/`/start`: oMLX writes a past-tense recap (What happened / Outcomes / Carried forward / Relationship) from the rolling notes + remaining messages, stored as `sessions.summary`. Skipped for `/reset` and for sessions where the user never spoke; those are skipped by the "previous session" lookup, which falls back to the last session with notes
+- [x] Final recap on `/new`/`/clear`/`/start`: oMLX writes a past-tense recap (Status / What happened / Outcomes / Carried forward / Relationship; *Aborted* status on safe word or a mid-scenario restart, results inconclusive, scenario retryable later) from the scenario, rolling notes + remaining messages, stored as `sessions.summary`. Skipped for `/reset` and for sessions where the user never spoke; those are skipped by the "previous session" lookup, which falls back to the last session with notes
 - [ ] Longer-term history: only the last session's recap is injected; older sessions reach the prompt only via vector recall. If the relationship arc needs more, add a rolling "history so far" digest updated from each recap
 - [ ] Race: a message sent while the opener is still generating (~10 s) doesn't see it, so Lars greets twice. Mitigated with "setting the scene…" + typing indicator; a real fix would make the chat path wait for or skip a pending opener
 - [x] `/swipe` re-rolls the opener (same scenario) until the user has spoken; the old opener is replaced on save. The old Telegram message stays in the chat (2026-09-27)
@@ -67,6 +67,7 @@ Done 2026-09-26: `sessions.note`; **Route Command** → **Set Note** → **Confi
 
 - [x] Rolling state/summary: `session_state` table; every `summary_interval_turns` (default 5) turns after **Save Turn**, oMLX merges the new messages (minus the latest, still-swipeable exchange) into the summary; injected as "Story so far" in the system prompt. `/clear` and `/reset` delete it (2026-09-26)
 - [ ] Tune the summary once it has run a few times: interval, 300-word cap, the four labels; consider moving state into the session model when `session_id` lands
-- [ ] LLM-generated scenarios: a separate workflow generates scenario + opener ideas into the openers table
-- [ ] `/scenario <text>` command to override the current session's premise from Telegram (`/note` is planned above)
+- [x] LLM-generated scenarios: `/newscenarios [idea]` → 3 `{title, premise}` drafts in `scenarios` (`draft = true`, disabled); `/keep_<id>` enables one, the next `/newscenarios` deletes the rest. Openers stay LLM-written at session start (Lars and Zach, 2026-09-27)
+- [x] ~~`/scenario <text>`~~ built as `/premise <text>`: restarts like `/scene` with a hand-written, one-off premise (no `scenarios` row, `scenario_id` null); bare `/premise` shows the current one (Lars and Zach, 2026-09-27)
+- [x] Add `premise` and `newscenarios` to BotFather `/setcommands` for both bots (manual)
 - [ ] Lorebook (`context_entries` with keyword or vector triggers, reusing the **Embed Query** vector). Skip until a character actually has lore
