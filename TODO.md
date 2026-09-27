@@ -19,7 +19,7 @@ Note: Cydonia's chat template (Mistral `[INST]`) doesn't put the system prompt a
 
 - [x] Add Character Card fields (`rules`, `character`, `persona_name`, `persona`, `world`, `scenario`); **Build Messages** assembles them with headings and skips empty blocks (Lars RP Bot with Scenarios, 2026-09-26)
 - [x] ~~Move recall out of the system message~~: not needed and not possible, see note above
-- [ ] Later: author's note (state is done, see Later). There's no mid-history `system` message, so fold it into the system prompt (already at depth 0), or into the latest user message
+- [x] Author's note: `/note`, injected as the last system prompt block (there's no mid-history `system` message; the system prompt is already at depth 0) (2026-09-26)
 
 ## 2. Fix the prompt itself
 
@@ -44,16 +44,29 @@ Done 2026-09-26: `sessions` + `scenarios` tables, `messages.session_id`.
 - [x] Openers: `scenarios.opener` sent verbatim if set; otherwise the LLM writes one from the scenario, previous-session summary and local time
 - [x] Opener vs chat template: Build Messages prepends a synthetic `[Session start]` user turn when the window starts with the opener
 - [x] Openers saved without an embedding; recall, /swipe and the backfill workflow pair replies with user messages only within the same session
-- [ ] Write real scenarios in the `scenarios` table (3 neutral starters seeded directly in the DB, not in the repo)
+- [x] Write real scenarios in the `scenarios` table (3 neutral starters seeded directly in the DB, not in the repo)
 - [x] Final recap on `/new`/`/clear`/`/start`: oMLX writes a past-tense recap (What happened / Outcomes / Carried forward / Relationship) from the rolling notes + remaining messages, stored as `sessions.summary`. Skipped for `/reset` and for sessions where the user never spoke; those are skipped by the "previous session" lookup, which falls back to the last session with notes
 - [ ] Longer-term history: only the last session's recap is injected; older sessions reach the prompt only via vector recall. If the relationship arc needs more, add a rolling "history so far" digest updated from each recap
 - [ ] Race: a message sent while the opener is still generating (~10 s) doesn't see it, so Lars greets twice. Mitigated with "setting the scene…" + typing indicator; a real fix would make the chat path wait for or skip a pending opener
-- [ ] `/swipe` can't regenerate the opener itself (it only swipes exchanges); use `/new` again for now
+- [x] `/swipe` re-rolls the opener (same scenario) until the user has spoken; the old opener is replaced on save. The old Telegram message stays in the chat (2026-09-27)
+- [x] `/scene` picker: tappable `/scene_<id>` list; restarts the session on the pick (discarding an unused session instead of stacking a new one on it); recent repeats need `/scene_<id>_yes` (2026-09-27)
+- [x] Replies capped at ~150 words (rules + Write Opener); recall tightened to top 3 at ≥ 0.7 similarity, since long recalled replies were priming length (2026-09-27)
+- [x] `/swipe` edits the old Telegram message in place (`messages.telegram_message_id`); falls back to a new message when the ID is unknown or the edit fails (Lars and Zach, 2026-09-27)
+- [x] Add `scene` to BotFather `/setcommands` for both bots (manual). Ported to Zach ERP 2026-09-27
+
+## `/note` (author's note)
+
+Done 2026-09-26: `sessions.note`; **Route Command** → **Set Note** → **Confirm Note**; **Fetch Recent History** returns it, **Build Messages** adds `## Author's note` last.
+
+- Deviation from the agreed design: bare `/note` **shows** the note and `/note clear` (or `off`) clears it, because tapping a command in Telegram's menu sends it bare, which would have silently wiped the note
+- Doesn't carry over to the next session, and isn't passed to **Write Opener**, **Summarize State** or **Write Recap**
+- [x] Add `note` to BotFather `/setcommands` (manual)
+- [x] Try it in a real session: does Cydonia follow it without leaking it into the reply?
 
 ## Later
 
 - [x] Rolling state/summary: `session_state` table; every `summary_interval_turns` (default 5) turns after **Save Turn**, oMLX merges the new messages (minus the latest, still-swipeable exchange) into the summary; injected as "Story so far" in the system prompt. `/clear` and `/reset` delete it (2026-09-26)
 - [ ] Tune the summary once it has run a few times: interval, 300-word cap, the four labels; consider moving state into the session model when `session_id` lands
 - [ ] LLM-generated scenarios: a separate workflow generates scenario + opener ideas into the openers table
-- [ ] `/scenario <text>` / `/note <text>` commands to set context from Telegram
+- [ ] `/scenario <text>` command to override the current session's premise from Telegram (`/note` is planned above)
 - [ ] Lorebook (`context_entries` with keyword or vector triggers, reusing the **Embed Query** vector). Skip until a character actually has lore
